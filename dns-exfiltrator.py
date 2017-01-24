@@ -6,7 +6,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from subprocess import call
 from scapy.all import *
-#from random import randint
 
 # Obfuscation types
 RANDOM = 1
@@ -25,16 +24,14 @@ step = 0.01
 prev_pval = 2
 poissonList = []
 currPoisson = 0;
-#max_burst = 20
-#current_burst = 0
-
-
 domain_rotate = 0 # used in testing to query alexa top 100000
-
 
 def makeDnsQuery():
 	global domain_rotate
-	call(["dig", lines[domain_rotate].rstrip()])
+	#call(["dig", lines[domain_rotate].rstrip()])
+	query = lines[domain_rotate].rstrip()
+	answer = sr1(IP(dst="8.8.8.8")/UDP(dport=53)/DNS(rd=1,qd=DNSQR(qname=query)),verbose=0)
+	#print answer.show()
 	domain_rotate = domain_rotate + 1
 	if (domain_rotate == len(lines)):
 		domain_rotate = 0
@@ -70,50 +67,58 @@ def generatePerlinDNS():
 	global base
 	global step
 	global prev_pval
-	#global max_burst
-	#global current_burst
 	
 	pval = pnoise1(base, 5)
 	if (pval < prev_pval):
 		current_burst = 0
 		delay = np.random.randint(0,5,1) + np.random.random(1)
 		print "Sleeping for ", delay
-		#time.sleep(np.random.randint(1,5))
 		time.sleep(delay)
 		base = base + 0.01
 	else:
 		makeDnsQuery()
-		time.sleep(abs(pval)) #might remove this
+		time.sleep(abs(pval))
 		base = base + 0.01
-		#boost = randint(1,10)
-		#for i in range(boost):
-		#	base = base + (step + 0.3)		
+		
 	prev_pval = pval
-	#base = base + step	
+	
 
+def GET_print(packet1):
+    ret = "***************************************GET PACKET****************************************************\n"
+    ret += "\n".join(packet1.sprintf("{Raw:%Raw.load%}\n").split(r"\r\n"))
+    ret += "*****************************************************************************************************\n"
+    return ret
 
-def handle_Packets(pkt):
-    #pkt_time = pkt.sprintf('%sent.time%')
+def handle_Http_Packets(pkt):
     try:
     	# We have some activity on port 80
-        http_packet = str(pkt)
+    	http_packet = str(pkt)
         if (http_packet.find('GET')):
-        	for x in range(np.random.randint(1, MAX_BURST)):
+        	if pkt.sprintf("{Raw:%Raw.load%}") != "":
         		makeDnsQuery()
     except:
     	pass
 
+def handle_Dns_Packets(pkt):
+	try:
+		if DNSQR in pkt and pkt.dport == 53:
+			makeDnsQuery()
+	except:
+		pass
+	
 def generatePiggybackHttpDns():
-	# Write the code to do http piggyback exfil here
 	interface = 'en0'
-  	filter_bpf = 'tcp port 80' # Look for DNS stuff
-  	#print "Starting sniff"
-  	sniff(iface=interface, filter=filter_bpf, timeout=30, store=0,  prn=handle_Packets)
-  	#print "Stoppping sniff"
+  	filter_bpf = 'tcp and port 80'
+  	print "Starting sniff"
+  	sniff(iface=interface, filter=filter_bpf, timeout=30, store=0,  prn=handle_Http_Packets)
+  	print "Stoppping sniff"
 
 def generatePiggybackDnsDns():
-	# Write the code to do dns piggyback exfil here
-	s = ""
+	interface = 'en0'
+  	filter_bpf = 'udp and port 53'
+  	print "Starting sniff"
+  	sniff(iface=interface, filter=filter_bpf, timeout=30, store=0,  prn=handle_Dns_Packets)
+  	print "Stoppping sniff"
 
 def exfiltrate(obsType):
 	if (obsType == RANDOM):
@@ -134,4 +139,4 @@ lines = [line.rstrip('\n') for line in open('alexa_100k_names.txt')]
 max_time = int(raw_input('Enter the amount of seconds you want to run Data Exfiltration for: '))
 start_time = time.time()  # remember when we started
 while (time.time() - start_time) < max_time:
-    exfiltrate(PIGGYBACK_HTTP)
+    exfiltrate(RANDOM)
